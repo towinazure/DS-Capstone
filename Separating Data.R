@@ -1,7 +1,5 @@
 rm(list=ls())
 
-library(caret)
-
 setwd('C:\\Users\\Edwin\\Desktop\\Edwin(10-08-2012)\\Assignments and Modules\\Coursera\\Data Science - John Hopkins\\Capstone\\Coursera-SwiftKey\\final\\en_US')
 
 con <- file("en_US.twitter.txt", "r") 

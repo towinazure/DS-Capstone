@@ -1,0 +1,152 @@
+---
+title: "Data Science Capstone -- Text Predictive Model"
+output:
+  html_notebook: default
+  html_document: 
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    theme: united
+---
+
+# Introduction
+
+In this project, we are going to develop a text typing hepler app which tries to predict and pop-up what user will type next.  The data we will be using is a slice of data provided in various twitter blogs. It is stored as "en_US.twitter.txt". We first perform some exploratory analysis. 
+
+# Libraries
+
+Here are the libraries we needed.
+
+```{r libraries, echo = TRUE, message = FALSE}
+library(dplyr)
+library(tidyr)
+library(knitr)
+options(digits = 9)
+```
+
+```{r base_wd, echo = FALSE}
+base_wd <- 'C:\\Users\\Edwin\\Desktop\\Edwin(10-08-2012)\\Assignments and Modules\\Coursera\\Data Science - John Hopkins\\Capstone\\'
+```
+
+# Splitting Data
+
+First, we need to split the data into training and validation set.  Since the data size is very big, we set the test-valid ratio to be 99-1 which should be still sufficient and let the model developed by the training set to be more robust.  We use the following code:
+
+```{r split_data, echo = TRUE, eval = FALSE}
+con <- file(paste(base_wd, "en_US.twitter.txt", sep = ""), "r") 
+x <- readLines(con)
+close(con)
+
+set.seed(12345)
+valid_index <- sample(1:length(x), size = 
+    round(length(x)/100, 0))
+
+train_set <- x[-valid_index]  
+valid_set <- x[valid_index]
+
+write(x = train_set, file = paste(base_wd, 'en_US.twitter_train.txt', sep = ""))
+write(x = valid_set, file = paste(base_wd, 'en_US.twitter_valid.txt', sep = ""))
+
+```
+
+# Map-Reduce System to Tokenize the data
+
+There is a speical phase that I used python mapper and reducer framework to tokenize the data.  The whole system performs the following tasks:
+
+1. Convert all alphabetic characters to lower case
+2. Subsituting all the non-alphabetic characters (except "'") to space 
+3. Split the string by space into tokens
+4. In each tokens, insert a special token "s1" before the start of a sentence or "e1" after the end of a sentence
+5. Reducer -- Aggregation:
+  i. Mono-gram: Sort, group and count the tokens
+  ii. Bi-gram: Sort, group tokens in pairs and count the pairs occurence
+
+# Clean up of tokens
+
+After the basic tokenize functions, we perform last step that replacing the "'" except the words involved in contraction see https://en.wikipedia.org/wiki/Contraction_(grammar).  The function is definied as below:
+
+Note that __monograms_df__ and __bigrams_df__ are our monogram and bigram input.
+
+```{r cleaningQuote, echo = TRUE, eval = FALSE}
+cleaningQuote <- function(my_df, col.names){
+
+# Replace the "'" characters except the contractions
+# contractions: "n't" , "'s", "i'm", "'ve", "'d", "'ll", "o'"
+
+  for(i in 1:length(col.names)){
+    
+    dummy_str <- my_df[, names(my_df) == col.names[i]]
+    
+    contraction_flag1 <- grepl("^.*(n\\'t)$", dummy_str)
+    contraction_flag2 <- grepl("^.*(\\'s)$", dummy_str)
+    contraction_flag3 <- grepl("^i\\'m$", dummy_str)
+    contraction_flag4 <- grepl("^.*(\\'ve)$", dummy_str)
+    contraction_flag5 <- grepl("^.*(\\'d)$", dummy_str)
+    contraction_flag6 <- grepl("^.*(\\'ll)$", dummy_str)
+    contraction_flag7 <- grepl("^(o\\').*$", dummy_str)
+    
+    contraction_flags <- contraction_flag1 | contraction_flag2 | contraction_flag3 |
+      contraction_flag4 | contraction_flag5 | contraction_flag6 | contraction_flag7
+    
+    dummy_str[!contraction_flags] <- gsub("'", "", x = dummy_str[!contraction_flags]) 
+    
+    #Replace <s1> by s1 and <e1> by e1 because of the html problem
+    dummy_str[dummy_str == '<s1>'] <- 's1'
+    dummy_str[dummy_str == '<e1>'] <- 'e1'
+    
+    my_df[, names(my_df) == col.names[i]] <- dummy_str
+    
+  }
+  
+  return(my_df)
+}
+
+monograms_df        <- read.table(paste(base_wd, 'mono_tokens_train_py.txt', sep =""),
+  sep = "\t", header = F,  quote = "\"",  stringsAsFactors = FALSE)
+names(monograms_df) <- c('Token', 'cnt')
+
+monograms_df <- cleaningQuote(monograms_df, col.names = 'Token')
+monograms_df <- monograms_df %>% group_by(Token) %>% summarise(cnt = sum(cnt)) %>% ungroup()
+monograms_df <- monograms_df %>% arrange(desc(cnt))
+
+bigrams_df        <- read.table(paste(base_wd, 'bigram_tokens_train_py.txt', sep =""),
+  sep = "\t", header = F,  quote = "\"",  stringsAsFactors = FALSE)
+names(bigrams_df) <- c('Token1', 'Token2', 'cnt')
+
+bigrams_df <- cleaningQuote(bigrams_df, col.names = c('Token1', 'Token2'))
+bigrams_df <- bigrams_df %>% group_by(Token1, Token2) %>% summarise(cnt = sum(cnt)) %>% ungroup()
+bigrams_df <- bigrams_df %>% arrange(desc(cnt))
+
+write.csv(monograms_df, paste(base_wd, 'mono_tokens_train_py.csv', sep =""), row.names = F)
+write.csv(bigrams_df, paste(base_wd, 'bigram_tokens_train_py.csv', sep =""), row.names = F)
+```
+
+Let's take a look on the first few elements.
+
+```{r readData, echo = FALSE, cache = TRUE}
+monograms_df <- read.csv(paste(base_wd, 'mono_tokens_train_py.csv', sep =""), stringsAsFactors = FALSE)
+bigrams_df   <- read.csv(paste(base_wd, 'bigram_tokens_train_py.csv', sep = ""), stringsAsFactors = FALSE)
+```
+
+```{r topElements, echo = TRUE}
+kable(head(monograms_df, n = 10), format.args = list(big.mark = ','))
+kable(head(bigrams_df, n = 10), format.args = list(big.mark = ','))
+```
+
+Although s1 and e1 are not exactly paired up, their numbers are closed enough to proceed.
+
+# Basic Statistics
+
+Now, let's explore some basic statistics in the training set.
+
+```{r basic_stat, echo = TRUE, cache = TRUE}
+con <- file(paste(base_wd, "en_US.twitter_train.txt", sep = ""), "r") 
+train_set <- readLines(con)
+close(con)
+num_of_lines <- length(train_set)
+rm(train_set)
+```
+
+There are $`r num_of_lines`$ of lines, $`r monograms_df$cnt[monograms_df$Token == 'e1']`$ of sentences, $`r sum(monograms_df$cnt)`$ of words in total.
+
+

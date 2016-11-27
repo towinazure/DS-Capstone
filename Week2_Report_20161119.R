@@ -1,6 +1,5 @@
 rm(list=ls())
 
-library(caret)
 library(dplyr)
 library(tidyr)
 
@@ -74,6 +73,15 @@ how_many_end_lines2   <- bigrams_df %>% filter(Token2 == '<e1>') %>% summarise(c
 # Has the data scientist done basic summaries of the three files? Word counts, line counts and basic data tables?
 # Has the data scientist made basic plots, such as histograms to illustrate features of the data?
 # Was the report written in a brief, concise style, in a way that a non-data scientist manager could appreciate?
+
+# Questions to consider
+# 
+# Some words are more frequent than others - what are the distributions of word frequencies?
+# What are the frequencies of 2-grams and 3-grams in the dataset?
+# How many unique words do you need in a frequency sorted dictionary to cover 50% of all word instances in the language? 90%?
+# How do you evaluate how many of the words come from foreign languages?
+# Can you think of a way to increase the coverage -- identifying words that may not be in the corpora or using a smaller number of words in the dictionary to cover the same number of phrases?
+
 
 
 #check the data
