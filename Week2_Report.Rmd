@@ -1,17 +1,17 @@
 ---
 title: "Data Science Capstone -- Text Predictive Model"
 output:
-  html_notebook: default
-  html_document: 
-    toc: true
-    toc_depth: 2
-    number_sections: true
+  html_document:
+    number_sections: yes
     theme: united
+    toc: yes
+    toc_depth: 2
+  html_notebook: default
 ---
 
 # Introduction
 
-In this project, we are going to develop a text typing hepler app which tries to predict and pop-up what user will type next.  The data we will be using is a slice of data provided in various twitter blogs. It is stored as "en_US.twitter.txt". We first perform some exploratory analysis. 
+In this project, we are going to develop a text typing helper app which tries to predict and pop-up what user will type next.  The model will be trained by data collected in various twitter sites, blogs and news website.  We first perform some exploratory analysis here before continue to develop the predictive model. 
 
 # Libraries
 
@@ -21,6 +21,10 @@ Here are the libraries we needed.
 library(dplyr)
 library(tidyr)
 library(knitr)
+library(ggplot2)
+library(ggrepel)
+library(tm)
+library(wordcloud)
 options(digits = 9)
 ```
 
@@ -30,44 +34,55 @@ base_wd <- 'C:\\Users\\Edwin\\Desktop\\Edwin(10-08-2012)\\Assignments and Module
 
 # Splitting Data
 
-First, we need to split the data into training and validation set.  Since the data size is very big, we set the test-valid ratio to be 99-1 which should be still sufficient and let the model developed by the training set to be more robust.  We use the following code:
+First, we need to partition the data into training and validation set.  Since the data size is very big, it is sufficient to set the test size to validation size to 99:1.  In that way, we can have the model developed by the training set to be more robust. We define __partitionTextFile__ function below to perform the task:
 
-```{r split_data, echo = TRUE, eval = FALSE}
-con <- file(paste(base_wd, "en_US.twitter.txt", sep = ""), "r") 
-x <- readLines(con)
-close(con)
+```{r partition_data, echo = TRUE, eval = FALSE}
+partitionTextFile <- function(file.name, validation.p = 0.01){
+  
+  con <- file(file.name, "r") 
+  x <- readLines(con)
+  close(con)
+  
+  valid.pos <- sample(1:length(x), size = 
+      round(length(x) * validation.p, 0))
+  
+  train_set <- x[-valid.pos]  
+  valid_set <- x[valid.pos]
+  
+  train_file_name <- gsub('.txt', '_train.txt', file.name)
+  valid_file_name <- gsub('.txt', '_valid.txt', file.name)
+  
+  write(x = train_set, file = train_file_name)
+  write(x = valid_set, file = valid_file_name)
+}
 
+#Applying the function
 set.seed(12345)
-valid_index <- sample(1:length(x), size = 
-    round(length(x)/100, 0))
-
-train_set <- x[-valid_index]  
-valid_set <- x[valid_index]
-
-write(x = train_set, file = paste(base_wd, 'en_US.twitter_train.txt', sep = ""))
-write(x = valid_set, file = paste(base_wd, 'en_US.twitter_valid.txt', sep = ""))
-
+file.names <- paste(base_wd, c('en_US.news.txt', 'en_US.blogs.txt', 'en_US.twitter.txt'), sep = "")
+for(i in 1:length(file.names)){
+  partitionTextFile(file.name = file.names[i], 0.01)
+}
 ```
 
 # Map-Reduce System to Tokenize the data
 
-There is a speical phase that I used python mapper and reducer framework to tokenize the data.  The whole system performs the following tasks:
+There is a special phase that I used python mapper and reducer framework to tokenize the data.  The whole system performs the following tasks:
 
 1. Convert all alphabetic characters to lower case
-2. Subsituting all the non-alphabetic characters (except "'") to space 
+2. Substituting all the non-alphabetic characters (except "'") to space 
 3. Split the string by space into tokens
 4. In each tokens, insert a special token "s1" before the start of a sentence or "e1" after the end of a sentence
 5. Reducer -- Aggregation:
   i. Mono-gram: Sort, group and count the tokens
-  ii. Bi-gram: Sort, group tokens in pairs and count the pairs occurence
+  ii. Bi-gram: Sort, group tokens in pairs and count the pairs occurrence
 
 # Clean up of tokens
 
-After the basic tokenize functions, we perform last step that replacing the "'" except the words involved in contraction see https://en.wikipedia.org/wiki/Contraction_(grammar).  The function is definied as below:
+After the basic tokenize functions, we perform last step that replacing the "'" except the words involved in contraction see https://en.wikipedia.org/wiki/Contraction_(grammar).  The function is defined as below:
 
-Note that __monograms_df__ and __bigrams_df__ are our monogram and bigram input.
+Note that __twitter_unigrams_df__ and __twitter_bigrams_df__ are our monogram and bigram input.
 
-```{r cleaningQuote, echo = TRUE, eval = FALSE}
+```{r cleaningQuote, echo = TRUE, cache = TRUE}
 cleaningQuote <- function(my_df, col.names){
 
 # Replace the "'" characters except the contractions
@@ -75,7 +90,7 @@ cleaningQuote <- function(my_df, col.names){
 
   for(i in 1:length(col.names)){
     
-    dummy_str <- my_df[, names(my_df) == col.names[i]]
+    dummy_str <- as.vector(my_df[[col.names[i]]])
     
     contraction_flag1 <- grepl("^.*(n\\'t)$", dummy_str)
     contraction_flag2 <- grepl("^.*(\\'s)$", dummy_str)
@@ -90,9 +105,10 @@ cleaningQuote <- function(my_df, col.names){
     
     dummy_str[!contraction_flags] <- gsub("'", "", x = dummy_str[!contraction_flags]) 
     
-    #Replace <s1> by s1 and <e1> by e1 because of the html problem
-    dummy_str[dummy_str == '<s1>'] <- 's1'
-    dummy_str[dummy_str == '<e1>'] <- 'e1'
+    #Replace <s1> by s1 and <e1> by e1 because of the html problem etc.
+    dummy_str <- gsub('<s>', 's1', dummy_str)
+    dummy_str <- gsub('<e>', 'e1', dummy_str)
+    dummy_str <- gsub('<|>', '', dummy_str)
     
     my_df[, names(my_df) == col.names[i]] <- dummy_str
     
@@ -101,52 +117,347 @@ cleaningQuote <- function(my_df, col.names){
   return(my_df)
 }
 
-monograms_df        <- read.table(paste(base_wd, 'mono_tokens_train_py.txt', sep =""),
-  sep = "\t", header = F,  quote = "\"",  stringsAsFactors = FALSE)
-names(monograms_df) <- c('Token', 'cnt')
-
-monograms_df <- cleaningQuote(monograms_df, col.names = 'Token')
-monograms_df <- monograms_df %>% group_by(Token) %>% summarise(cnt = sum(cnt)) %>% ungroup()
-monograms_df <- monograms_df %>% arrange(desc(cnt))
-
-bigrams_df        <- read.table(paste(base_wd, 'bigram_tokens_train_py.txt', sep =""),
-  sep = "\t", header = F,  quote = "\"",  stringsAsFactors = FALSE)
-names(bigrams_df) <- c('Token1', 'Token2', 'cnt')
-
-bigrams_df <- cleaningQuote(bigrams_df, col.names = c('Token1', 'Token2'))
-bigrams_df <- bigrams_df %>% group_by(Token1, Token2) %>% summarise(cnt = sum(cnt)) %>% ungroup()
-bigrams_df <- bigrams_df %>% arrange(desc(cnt))
-
-write.csv(monograms_df, paste(base_wd, 'mono_tokens_train_py.csv', sep =""), row.names = F)
-write.csv(bigrams_df, paste(base_wd, 'bigram_tokens_train_py.csv', sep =""), row.names = F)
 ```
 
-Let's take a look on the first few elements.
+Now, let's apply this function to clean up the quotes and data frame the tokens tables.
+
+```{r tokenize_df, echo = TRUE, cache = TRUE}
+#blogs
+blogs_unigrams_df        <- read.table(paste(base_wd, 'blogs_uni_tokens_train_py.txt', sep =""),
+  sep = "\t", header = F,  quote = "\"",  stringsAsFactors = FALSE)
+names(blogs_unigrams_df) <- c('Token', 'cnt')
+
+blogs_unigrams_df <- cleaningQuote(blogs_unigrams_df, col.names = 'Token')
+blogs_unigrams_df <- blogs_unigrams_df %>% group_by(Token) %>% summarise(cnt = sum(cnt)) %>% ungroup()
+blogs_unigrams_df <- blogs_unigrams_df %>% arrange(desc(cnt))
+
+blogs_bigrams_df        <- read.table(paste(base_wd, 'blogs_bi_tokens_train_py.txt', sep =""),
+  sep = "\t", header = F,  quote = "\"",  stringsAsFactors = FALSE)
+names(blogs_bigrams_df) <- c('Token1', 'Token2', 'cnt')
+
+blogs_bigrams_df <- cleaningQuote(blogs_bigrams_df, col.names = c('Token1', 'Token2'))
+blogs_bigrams_df <- blogs_bigrams_df %>% group_by(Token1, Token2) %>% summarise(cnt = sum(cnt)) %>% ungroup()
+blogs_bigrams_df <- blogs_bigrams_df %>% arrange(desc(cnt))
+
+
+#twitter
+twitter_unigrams_df        <- read.table(paste(base_wd, 'twitter_uni_tokens_train_py.txt', sep =""),
+  sep = "\t", header = F,  quote = "\"",  stringsAsFactors = FALSE)
+names(twitter_unigrams_df) <- c('Token', 'cnt')
+
+twitter_unigrams_df <- cleaningQuote(twitter_unigrams_df, col.names = 'Token')
+twitter_unigrams_df <- twitter_unigrams_df %>% group_by(Token) %>% summarise(cnt = sum(cnt)) %>% ungroup()
+twitter_unigrams_df <- twitter_unigrams_df %>% arrange(desc(cnt))
+
+twitter_bigrams_df        <- read.table(paste(base_wd, 'twitter_bi_tokens_train_py.txt', sep =""),
+  sep = "\t", header = F,  quote = "\"",  stringsAsFactors = FALSE)
+names(twitter_bigrams_df) <- c('Token1', 'Token2', 'cnt')
+
+twitter_bigrams_df <- cleaningQuote(twitter_bigrams_df, col.names = c('Token1', 'Token2'))
+twitter_bigrams_df <- twitter_bigrams_df %>% group_by(Token1, Token2) %>% summarise(cnt = sum(cnt)) %>% ungroup()
+twitter_bigrams_df <- twitter_bigrams_df %>% arrange(desc(cnt))
+
+#news
+news_unigrams_df        <- read.table(paste(base_wd, 'news_uni_tokens_train_py.txt', sep =""),
+  sep = "\t", header = F,  quote = "\"",  stringsAsFactors = FALSE)
+names(news_unigrams_df) <- c('Token', 'cnt')
+
+news_unigrams_df <- cleaningQuote(news_unigrams_df, col.names = 'Token')
+news_unigrams_df <- news_unigrams_df %>% group_by(Token) %>% summarise(cnt = sum(cnt)) %>% ungroup()
+news_unigrams_df <- news_unigrams_df %>% arrange(desc(cnt))
+
+news_bigrams_df        <- read.table(paste(base_wd, 'news_bi_tokens_train_py.txt', sep =""),
+  sep = "\t", header = F,  quote = "\"",  stringsAsFactors = FALSE)
+names(news_bigrams_df) <- c('Token1', 'Token2', 'cnt')
+
+news_bigrams_df <- cleaningQuote(news_bigrams_df, col.names = c('Token1', 'Token2'))
+news_bigrams_df <- news_bigrams_df %>% group_by(Token1, Token2) %>% summarise(cnt = sum(cnt)) %>% ungroup()
+news_bigrams_df <- news_bigrams_df %>% arrange(desc(cnt))
+
+
+#Save as .csv files
+write.csv(blogs_unigrams_df, paste(base_wd, 'blogs_uni_tokens_train_py.csv', sep =""), row.names = F)
+write.csv(blogs_bigrams_df, paste(base_wd, 'blogs_bi_tokens_train_py.csv', sep =""), row.names = F)
+
+write.csv(twitter_unigrams_df, paste(base_wd, 'twitter_uni_tokens_train_py.csv', sep =""), row.names = F)
+write.csv(twitter_bigrams_df, paste(base_wd, 'twitter_bi_tokens_train_py.csv', sep =""), row.names = F)
+
+write.csv(news_unigrams_df, paste(base_wd, 'news_uni_tokens_train_py.csv', sep =""), row.names = F)
+write.csv(news_bigrams_df, paste(base_wd, 'news_bi_tokens_train_py.csv', sep =""), row.names = F)
+
+#Save as .RData
+save(blogs_unigrams_df, blogs_bigrams_df,
+  twitter_unigrams_df, twitter_bigrams_df,
+  news_unigrams_df, news_bigrams_df, file = paste(base_wd, 'tokens_df.RData', sep =""))
+```
+
+
+Let's take a look on the first few elements of the twitter uni-gram and bi-gram data frame.
 
 ```{r readData, echo = FALSE, cache = TRUE}
-monograms_df <- read.csv(paste(base_wd, 'mono_tokens_train_py.csv', sep =""), stringsAsFactors = FALSE)
-bigrams_df   <- read.csv(paste(base_wd, 'bigram_tokens_train_py.csv', sep = ""), stringsAsFactors = FALSE)
+load(file = paste(base_wd, 'tokens_df.RData', sep =""))
 ```
 
 ```{r topElements, echo = TRUE}
-kable(head(monograms_df, n = 10), format.args = list(big.mark = ','))
-kable(head(bigrams_df, n = 10), format.args = list(big.mark = ','))
+kable(head(twitter_unigrams_df, n = 10), format.args = list(big.mark = ','))
+kable(head(twitter_bigrams_df, n = 10), format.args = list(big.mark = ','))
 ```
 
 Although s1 and e1 are not exactly paired up, their numbers are closed enough to proceed.
 
+
+# Dictionary & Stop Words Check
+
+Let's check how many of them are English words from a standard dictionary.  We grab this from a simple dictionary online from https://github.com/dwyl/English-words with 350 thousands words plus.  Note that, it doesn't contain complicated words so it only serves for a proxy for us to compare our three difference source ( __twitter__, __news__, __blogs__ ).
+
+Also, a lot of common words such as "I'm", "We", "there", "the" etc. don't tell any thing about the articles.  In view of that, we filter a list of "stop words" from the __tm__ package.
+
+To enhance flexibility, we flag those tokens here rather than a direct filtering.
+
+```{r create_dict, echo = FALSE, eval = FALSE}
+#loading dictionary as a vector of characters
+con <- file(paste(base_wd, "words.txt", sep = ""), "r") 
+dict1 <- readLines(con)
+close(con)
+
+con <- file(paste(base_wd, "words2.txt", sep = ""), "r") 
+dict2 <- readLines(con)
+close(con)
+
+con <- file(paste(base_wd, "words3.txt", sep = ""), "r") 
+dict3 <- readLines(con)
+close(con)
+
+my_dictionary <- unique(c(dict1, dict2, dict3, 's1', 'e1'))
+rm(dict1, dict2, dict3)
+
+write(my_dictionary, file = paste(base_wd, 'simple_words.txt', sep = ""))
+```
+
+```{r dictionary_check, echo = TRUE, cache = TRUE}
+#loading dictionary by line
+con <- file(paste(base_wd, "simple_words.txt", sep = ""), "r") 
+my_dictionary <- readLines(con)
+close(con)
+
+stopwords <- tm::stopwords()
+
+flagTokens <- function(my_df, col.names, dictionary, stopwords){
+  
+  for(i in 1:length(col.names)){
+    
+     dummy_str <- as.vector(my_df[[col.names[i]]])
+     Eng_Word_new  <- dummy_str %in% dictionary | grepl("^(.)*'", x = dummy_str)
+     Stop_Word_new <- dummy_str %in% stopwords
+     
+     if(i > 1){
+       
+       Eng_Word  <- Eng_Word  | Eng_Word_new
+       Stop_Word <- Stop_Word | Stop_Word_new
+       
+     }else{
+       
+       Eng_Word  <- Eng_Word_new
+       Stop_Word <- Stop_Word_new
+       
+     }
+     
+  }
+  
+  my_df$Eng_Word <- Eng_Word
+  my_df$Stop_Word <- Stop_Word
+  
+  return(my_df)
+}
+
+blogs_unigrams_df <- flagTokens(blogs_unigrams_df, col.names = c('Token'), 
+  dictionary = my_dictionary, stopwords = stopwords)
+
+blogs_bigrams_df <- flagTokens(blogs_bigrams_df, col.names = c('Token1', 'Token2'),
+  dictionary = my_dictionary, stopwords = stopwords)
+
+
+twitter_unigrams_df <- flagTokens(twitter_unigrams_df, col.names = c('Token'), 
+  dictionary = my_dictionary, stopwords = stopwords)
+
+twitter_bigrams_df <- flagTokens(twitter_bigrams_df, col.names = c('Token1', 'Token2'), 
+  dictionary = my_dictionary, stopwords = stopwords)
+
+news_unigrams_df <- flagTokens(news_unigrams_df, col.names = c('Token'), 
+  dictionary = my_dictionary, stopwords = stopwords)
+
+news_bigrams_df <- flagTokens(news_bigrams_df, col.names = c('Token1', 'Token2'),
+  dictionary = my_dictionary, stopwords = stopwords)
+
+
+#Save as .RData
+save(blogs_unigrams_df, blogs_bigrams_df,
+  twitter_unigrams_df, twitter_bigrams_df,
+  news_unigrams_df, news_bigrams_df, file = paste(base_wd, 'ngrams_df.RData', sep =""))
+```
+
 # Basic Statistics
 
-Now, let's explore some basic statistics in the training set.
+Now, let's explore some basic statistics in those three different training set.
 
 ```{r basic_stat, echo = TRUE, cache = TRUE}
+
+con <- file(paste(base_wd, "en_US.blogs_train.txt", sep = ""), "r") 
+train_set <- readLines(con)
+close(con)
+blogs_num_of_lines <- length(train_set)
+rm(train_set)
+
 con <- file(paste(base_wd, "en_US.twitter_train.txt", sep = ""), "r") 
 train_set <- readLines(con)
 close(con)
-num_of_lines <- length(train_set)
+twitter_num_of_lines <- length(train_set)
 rm(train_set)
+
+con <- file(paste(base_wd, "en_US.news_train.txt", sep = ""), "r") 
+train_set <- readLines(con)
+close(con)
+news_num_of_lines <- length(train_set)
+rm(train_set)
+
+basic_stat <- data.frame(source = c('Blogs', 'Twitter', 'News'))
+basic_stat$Paragraphs <- c(blogs_num_of_lines, twitter_num_of_lines, news_num_of_lines)
+basic_stat$Sentences <- c(
+  sum(blogs_unigrams_df$cnt[blogs_unigrams_df$Token != 'e1']),
+  sum(twitter_unigrams_df$cnt[twitter_unigrams_df$Token != 'e1']),
+  sum(news_unigrams_df$cnt[news_unigrams_df$Token != 'e1']))
+basic_stat$Tokens <- c(
+  sum(blogs_unigrams_df$cnt[blogs_unigrams_df$Token != 's1' & blogs_unigrams_df$Token != 'e1']),
+  sum(twitter_unigrams_df$cnt[twitter_unigrams_df$Token != 's1' & twitter_unigrams_df$Token != 'e1']),
+  sum(news_unigrams_df$cnt[news_unigrams_df$Token != 's1' & news_unigrams_df$Token != 'e1']))
+
+basic_stat$`Sentence per Paragraphs` <-  round(basic_stat$Sentence/basic_stat$Paragraphs, 2)
+basic_stat$`Tokens per Sentence`     <-  round(basic_stat$Tokens/basic_stat$Sentences, 2)
+basic_stat$`Stop Words` <- c(
+  sum(blogs_unigrams_df$cnt[blogs_unigrams_df$Stop_Word]),
+  sum(twitter_unigrams_df$cnt[twitter_unigrams_df$Stop_Word]),
+  sum(news_unigrams_df$cnt[news_unigrams_df$Stop_Word]))
+
+basic_stat$`English Words` <- c(
+  sum(blogs_unigrams_df$cnt[blogs_unigrams_df$Eng_Word & !blogs_unigrams_df$Stop_Word & 
+      blogs_unigrams_df$Token != 's1' & blogs_unigrams_df$Token != 'e1']),
+  sum(twitter_unigrams_df$cnt[twitter_unigrams_df$Eng_Word & !twitter_unigrams_df$Stop_Word &
+      twitter_unigrams_df$Token != 's1' & twitter_unigrams_df$Token != 'e1']),
+  sum(news_unigrams_df$cnt[news_unigrams_df$Eng_Word & !news_unigrams_df$Stop_Word &
+      news_unigrams_df$Token != 's1' & news_unigrams_df$Token != 'e1']))
+
+basic_stat$`English Words %` <- round(basic_stat$`English Words`/(basic_stat$Tokens - basic_stat$`Stop Words`), 2)
 ```
 
-There are $`r num_of_lines`$ of lines, $`r monograms_df$cnt[monograms_df$Token == 'e1']`$ of sentences, $`r sum(monograms_df$cnt)`$ of words in total.
+
+```{r basic_stat2, echo = TRUE, cache = TRUE}
+kable(basic_stat, format.args = list(big.mark = ','))
+```
+
+We have a very nice result that after subtracting stop words, our English words % (over all tokens) are as high as 92% - 96%. Interestingly, blogs has a very high number of sentences per paragraphs (recognized by escape character "\\n") compared to the other source.  Tokens per sentence is about the same except twitter has a little bit shorter sentence (0.94 vs. 0.88).
 
 
+# Word Cloud
+
+Let's explore the word cloud of each source.
+
+## Blogs
+
+```{r blogs_wc, echo = FALSE, cache = TRUE, message = FALSE}
+blogs_wc_df <- blogs_unigrams_df %>% filter(!Stop_Word & Eng_Word & Token != 'e1' & Token != 's1' & nchar(Token) > 1)
+blogs_wc_df <- blogs_wc_df[1:200,]
+
+set.seed(1234)
+wordcloud(blogs_wc_df$Token, 
+  freq = blogs_wc_df$cnt, 
+  scale = c(4, .1),
+  min.freq = 200,
+  max.words = 120,
+  random.order = FALSE, rot.per = 0.35,
+  colors = brewer.pal(6, "Dark2"))
+
+```
+
+## Twitter
+
+```{r twitter_wc, echo = FALSE, cache = TRUE, message = FALSE}
+twitter_wc_df <- twitter_unigrams_df %>% filter(!Stop_Word & Eng_Word & Token != 'e1' & Token != 's1' & nchar(Token) > 1)
+twitter_wc_df <- twitter_wc_df[1:200,]
+
+set.seed(1234)
+wordcloud(twitter_wc_df$Token, 
+  freq = twitter_wc_df$cnt, 
+  scale = c(4, .1),
+  min.freq = 200,
+  max.words = 120,
+  random.order = FALSE, rot.per = 0.35,
+  colors = brewer.pal(6, "Dark2"))
+
+```
+
+## News
+
+```{r news_wc, echo = FALSE, cache = TRUE, message = FALSE}
+news_wc_df <- news_unigrams_df %>% filter(!Stop_Word & Eng_Word & Token != 'e1' & Token != 's1' & nchar(Token) > 1)
+news_wc_df <- news_wc_df[1:200,]
+
+set.seed(1234)
+wordcloud(news_wc_df$Token, 
+  freq = news_wc_df$cnt, 
+  scale = c(4, .1),
+  min.freq = 200,
+  max.words = 120,
+  random.order = FALSE, rot.per = 0.35,
+  colors = brewer.pal(6, "Dark2"))
+
+```
+
+Interestingly, __twitter__ and __blogs__ are very similar with words such as "like", "time", "love", "thanks", "one" etc.  However, as we can see, in __news__, a very significantly dominating word is "said".  
+
+# Histogram of 2-Gram Terms
+
+## Blogs
+
+Let's also explore the 2-gram level terms. "Many people", "year old", "years ago" are the most frequent terms in __blogs__.  "Right now" and "just want" are the most frequent terms in __twitter__. "Health care", "years old" and "last year" are the most frequent terms in __news__,
+
+
+```{r blog_tg_hist, echo = FALSE, cahce = TRUE}
+blogs_tg_df <- blogs_bigrams_df %>% 
+  filter(!Stop_Word & Eng_Word & Token1 != 's1' & Token2 != 'e1' & nchar(Token1) & nchar(Token2) > 1)
+blogs_tg_df <- blogs_tg_df[1:50,]
+blogs_tg_df$Terms <- paste(blogs_tg_df$Token1, blogs_tg_df$Token2)
+
+ggplot(data = blogs_tg_df) + geom_bar(mapping = aes(y = cnt, x = Terms), stat = 'identity') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = '2-Gram Terms', y = 'Words Frequency')
+
+```
+
+## Twitter
+
+```{r twitter_tg_hist, echo = FALSE, cahce = TRUE}
+twitter_tg_df <- twitter_bigrams_df %>% 
+  filter(!Stop_Word & Eng_Word & Token1 != 's1' & Token2 != 'e1' & nchar(Token1) & nchar(Token2) > 1)
+twitter_tg_df <- twitter_tg_df[1:50,]
+twitter_tg_df$Terms <- paste(twitter_tg_df$Token1, twitter_tg_df$Token2)
+
+ggplot(data = twitter_tg_df) + geom_bar(mapping = aes(y = cnt, x = Terms), stat = 'identity') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = '2-Gram Terms', y = 'Words Frequency')
+
+```
+
+
+## News
+
+```{r news_tg_hist, echo = FALSE, cahce = TRUE}
+news_tg_df <- news_bigrams_df %>% 
+  filter(!Stop_Word & Eng_Word & Token1 != 's1' & Token2 != 'e1' & nchar(Token1) & nchar(Token2) > 1)
+news_tg_df <- news_tg_df[1:50,]
+news_tg_df$Terms <- paste(news_tg_df$Token1, news_tg_df$Token2)
+
+ggplot(data = news_tg_df) + geom_bar(mapping = aes(y = cnt, x = Terms), stat = 'identity') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = '2-Gram Terms', y = 'Words Frequency')
+
+```

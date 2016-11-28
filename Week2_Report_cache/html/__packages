@@ -1,9 +1,10 @@
 base
-methods
-datasets
-utils
-grDevices
-graphics
-stats
 dplyr
 tidyr
+knitr
+ggplot2
+ggrepel
+NLP
+tm
+RColorBrewer
+wordcloud
