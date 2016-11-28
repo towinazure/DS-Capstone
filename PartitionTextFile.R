@@ -1,7 +1,7 @@
 partitionTextFile <- function(file.name, validation.p = 0.01){
   
-  con <- file(file.name, "r") 
-  x <- readLines(con)
+  con <- file(file.name) 
+  x <- readLines(con, encoding = "UTF-8", skipNul = TRUE)
   close(con)
   
   valid.pos <- sample(1:length(x), size = 

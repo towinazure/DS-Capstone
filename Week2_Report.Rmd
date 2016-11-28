@@ -2,6 +2,7 @@
 title: "Data Science Capstone -- Text Predictive Model"
 output:
   html_document:
+    keep_md: yes
     number_sections: yes
     theme: united
     toc: yes
@@ -198,7 +199,7 @@ Let's take a look on the first few elements of the twitter uni-gram and bi-gram 
 load(file = paste(base_wd, 'tokens_df.RData', sep =""))
 ```
 
-```{r topElements, echo = TRUE}
+```{r topElements, echo = FALSE}
 kable(head(twitter_unigrams_df, n = 10), format.args = list(big.mark = ','))
 kable(head(twitter_bigrams_df, n = 10), format.args = list(big.mark = ','))
 ```
@@ -300,6 +301,10 @@ save(blogs_unigrams_df, blogs_bigrams_df,
 
 Now, let's explore some basic statistics in those three different training set.
 
+```{r load_grams_df, echo = FALSE, cache = TRUE}
+load(file = paste(base_wd, 'ngrams_df.RData', sep =""))
+```
+
 ```{r basic_stat, echo = TRUE, cache = TRUE}
 
 con <- file(paste(base_wd, "en_US.blogs_train.txt", sep = ""), "r") 
@@ -354,7 +359,7 @@ basic_stat$`English Words %` <- round(basic_stat$`English Words`/(basic_stat$Tok
 kable(basic_stat, format.args = list(big.mark = ','))
 ```
 
-We have a very nice result that after subtracting stop words, our English words % (over all tokens) are as high as 92% - 96%. Interestingly, blogs has a very high number of sentences per paragraphs (recognized by escape character "\\n") compared to the other source.  Tokens per sentence is about the same except twitter has a little bit shorter sentence (0.94 vs. 0.88).
+We have a very nice result that after subtracting stop words, our English words % (over all tokens) are as high as 92% - 96%. __Blogs__ and __news__ as expected have a higher sentences per paragraphs (measured by lines or technically escape character"\\n").  Tokens per sentence is about the same except twitter has a little bit shorter sentence (0.94 vs. 0.88).
 
 
 # Word Cloud
@@ -372,7 +377,7 @@ wordcloud(blogs_wc_df$Token,
   freq = blogs_wc_df$cnt, 
   scale = c(4, .1),
   min.freq = 200,
-  max.words = 120,
+  max.words = 200,
   random.order = FALSE, rot.per = 0.35,
   colors = brewer.pal(6, "Dark2"))
 
@@ -389,7 +394,7 @@ wordcloud(twitter_wc_df$Token,
   freq = twitter_wc_df$cnt, 
   scale = c(4, .1),
   min.freq = 200,
-  max.words = 120,
+  max.words = 200,
   random.order = FALSE, rot.per = 0.35,
   colors = brewer.pal(6, "Dark2"))
 
@@ -399,29 +404,29 @@ wordcloud(twitter_wc_df$Token,
 
 ```{r news_wc, echo = FALSE, cache = TRUE, message = FALSE}
 news_wc_df <- news_unigrams_df %>% filter(!Stop_Word & Eng_Word & Token != 'e1' & Token != 's1' & nchar(Token) > 1)
-news_wc_df <- news_wc_df[1:200,]
+news_wc_df <- news_wc_df[1:350,]
 
 set.seed(1234)
 wordcloud(news_wc_df$Token, 
   freq = news_wc_df$cnt, 
   scale = c(4, .1),
-  min.freq = 200,
-  max.words = 120,
+  min.freq = 50,
+  max.words = 350,
   random.order = FALSE, rot.per = 0.35,
   colors = brewer.pal(6, "Dark2"))
 
 ```
 
-Interestingly, __twitter__ and __blogs__ are very similar with words such as "like", "time", "love", "thanks", "one" etc.  However, as we can see, in __news__, a very significantly dominating word is "said".  
+Interestingly, __twitter__ and __blogs__ are very similar with words such as "like", "time", "love", "thanks", "one" etc. __twitter__ also has its own popular words such as "haha" and "rt" (retweet). On the other hand, in __news__, a very significantly dominating word is "said".  
 
 # Histogram of 2-Gram Terms
 
 ## Blogs
 
-Let's also explore the 2-gram level terms. "Many people", "year old", "years ago" are the most frequent terms in __blogs__.  "Right now" and "just want" are the most frequent terms in __twitter__. "Health care", "years old" and "last year" are the most frequent terms in __news__,
+Let's also explore the 2-gram level terms. "New York", "right now"", "years ago" are the most frequent terms in __blogs__.  "Right now" and "last night" are the most frequent terms in __twitter__. "New York", "years old" and "last year" are the most frequent terms in __news__,
 
 
-```{r blog_tg_hist, echo = FALSE, cahce = TRUE}
+```{r blog_tg_hist, echo = FALSE, cache = TRUE}
 blogs_tg_df <- blogs_bigrams_df %>% 
   filter(!Stop_Word & Eng_Word & Token1 != 's1' & Token2 != 'e1' & nchar(Token1) & nchar(Token2) > 1)
 blogs_tg_df <- blogs_tg_df[1:50,]
@@ -435,7 +440,7 @@ ggplot(data = blogs_tg_df) + geom_bar(mapping = aes(y = cnt, x = Terms), stat = 
 
 ## Twitter
 
-```{r twitter_tg_hist, echo = FALSE, cahce = TRUE}
+```{r twitter_tg_hist, echo = FALSE, cache = TRUE}
 twitter_tg_df <- twitter_bigrams_df %>% 
   filter(!Stop_Word & Eng_Word & Token1 != 's1' & Token2 != 'e1' & nchar(Token1) & nchar(Token2) > 1)
 twitter_tg_df <- twitter_tg_df[1:50,]
@@ -450,7 +455,7 @@ ggplot(data = twitter_tg_df) + geom_bar(mapping = aes(y = cnt, x = Terms), stat 
 
 ## News
 
-```{r news_tg_hist, echo = FALSE, cahce = TRUE}
+```{r news_tg_hist, echo = FALSE, cache = TRUE}
 news_tg_df <- news_bigrams_df %>% 
   filter(!Stop_Word & Eng_Word & Token1 != 's1' & Token2 != 'e1' & nchar(Token1) & nchar(Token2) > 1)
 news_tg_df <- news_tg_df[1:50,]
