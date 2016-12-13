@@ -7,6 +7,7 @@ output:
     theme: united
     toc: yes
     toc_depth: 2
+    self_contained: true
   html_notebook: default
 ---
 
@@ -306,26 +307,32 @@ load(file = paste(base_wd, 'ngrams_df.RData', sep =""))
 ```
 
 ```{r basic_stat, echo = TRUE, cache = TRUE}
-
-con <- file(paste(base_wd, "en_US.blogs_train.txt", sep = ""), "r") 
+file_name <- paste(base_wd, "en_US.blogs_train.txt", sep = "")
+con <- file(file_name, "r") 
 train_set <- readLines(con)
 close(con)
 blogs_num_of_lines <- length(train_set)
+blogs_file_size    <- paste(round(file.info(file_name)$size / 1024^2, 2), "MB")
 rm(train_set)
 
-con <- file(paste(base_wd, "en_US.twitter_train.txt", sep = ""), "r") 
+file_name <- paste(base_wd, "en_US.twitter_train.txt", sep = "")
+con <- file(file_name, "r") 
 train_set <- readLines(con)
 close(con)
-twitter_num_of_lines <- length(train_set)
+twitter_num_of_lines   <- length(train_set)
+twitter_file_size      <- paste(round(file.info(file_name)$size / 1024^2, 2), "MB")
 rm(train_set)
 
-con <- file(paste(base_wd, "en_US.news_train.txt", sep = ""), "r") 
+file_name <- paste(base_wd, "en_US.news_train.txt", sep = "")
+con <- file(file_name, "r") 
 train_set <- readLines(con)
 close(con)
 news_num_of_lines <- length(train_set)
+news_file_size    <- paste(round(file.info(file_name)$size / 1024^2, 2), "MB")
 rm(train_set)
 
 basic_stat <- data.frame(source = c('Blogs', 'Twitter', 'News'))
+basic_stat$`File Size` <- c(blogs_file_size, twitter_file_size, news_file_size)
 basic_stat$Paragraphs <- c(blogs_num_of_lines, twitter_num_of_lines, news_num_of_lines)
 basic_stat$Sentences <- c(
   sum(blogs_unigrams_df$cnt[blogs_unigrams_df$Token != 'e1']),
@@ -336,8 +343,8 @@ basic_stat$Tokens <- c(
   sum(twitter_unigrams_df$cnt[twitter_unigrams_df$Token != 's1' & twitter_unigrams_df$Token != 'e1']),
   sum(news_unigrams_df$cnt[news_unigrams_df$Token != 's1' & news_unigrams_df$Token != 'e1']))
 
-basic_stat$`Sentence per Paragraphs` <-  round(basic_stat$Sentence/basic_stat$Paragraphs, 2)
-basic_stat$`Tokens per Sentence`     <-  round(basic_stat$Tokens/basic_stat$Sentences, 2)
+basic_stat$`Sentence/Paragraphs` <-  round(basic_stat$Sentence/basic_stat$Paragraphs, 2)
+basic_stat$`Tokens/Sentence`     <-  round(basic_stat$Tokens/basic_stat$Sentences, 2)
 basic_stat$`Stop Words` <- c(
   sum(blogs_unigrams_df$cnt[blogs_unigrams_df$Stop_Word]),
   sum(twitter_unigrams_df$cnt[twitter_unigrams_df$Stop_Word]),
@@ -431,6 +438,7 @@ blogs_tg_df <- blogs_bigrams_df %>%
   filter(!Stop_Word & Eng_Word & Token1 != 's1' & Token2 != 'e1' & nchar(Token1) & nchar(Token2) > 1)
 blogs_tg_df <- blogs_tg_df[1:50,]
 blogs_tg_df$Terms <- paste(blogs_tg_df$Token1, blogs_tg_df$Token2)
+blogs_tg_df$Terms <- factor(blogs_tg_df$Terms, levels = blogs_tg_df$Terms[order(-blogs_tg_df$cnt)])
 
 ggplot(data = blogs_tg_df) + geom_bar(mapping = aes(y = cnt, x = Terms), stat = 'identity') +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
@@ -445,6 +453,7 @@ twitter_tg_df <- twitter_bigrams_df %>%
   filter(!Stop_Word & Eng_Word & Token1 != 's1' & Token2 != 'e1' & nchar(Token1) & nchar(Token2) > 1)
 twitter_tg_df <- twitter_tg_df[1:50,]
 twitter_tg_df$Terms <- paste(twitter_tg_df$Token1, twitter_tg_df$Token2)
+twitter_tg_df$Terms <- factor(twitter_tg_df$Terms, levels = twitter_tg_df$Terms[order(-twitter_tg_df$cnt)])
 
 ggplot(data = twitter_tg_df) + geom_bar(mapping = aes(y = cnt, x = Terms), stat = 'identity') +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
@@ -460,6 +469,7 @@ news_tg_df <- news_bigrams_df %>%
   filter(!Stop_Word & Eng_Word & Token1 != 's1' & Token2 != 'e1' & nchar(Token1) & nchar(Token2) > 1)
 news_tg_df <- news_tg_df[1:50,]
 news_tg_df$Terms <- paste(news_tg_df$Token1, news_tg_df$Token2)
+news_tg_df$Terms <- factor(news_tg_df$Terms, levels = news_tg_df$Terms[order(-news_tg_df$cnt)])
 
 ggplot(data = news_tg_df) + geom_bar(mapping = aes(y = cnt, x = Terms), stat = 'identity') +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +

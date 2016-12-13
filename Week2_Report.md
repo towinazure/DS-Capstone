@@ -301,25 +301,32 @@ Now, let's explore some basic statistics in those three different training set.
 
 
 ```r
-con <- file(paste(base_wd, "en_US.blogs_train.txt", sep = ""), "r") 
+file_name <- paste(base_wd, "en_US.blogs_train.txt", sep = "")
+con <- file(file_name, "r") 
 train_set <- readLines(con)
 close(con)
 blogs_num_of_lines <- length(train_set)
+blogs_file_size    <- paste(round(file.info(file_name)$size / 1024^2, 2), "MB")
 rm(train_set)
 
-con <- file(paste(base_wd, "en_US.twitter_train.txt", sep = ""), "r") 
+file_name <- paste(base_wd, "en_US.twitter_train.txt", sep = "")
+con <- file(file_name, "r") 
 train_set <- readLines(con)
 close(con)
-twitter_num_of_lines <- length(train_set)
+twitter_num_of_lines   <- length(train_set)
+twitter_file_size      <- paste(round(file.info(file_name)$size / 1024^2, 2), "MB")
 rm(train_set)
 
-con <- file(paste(base_wd, "en_US.news_train.txt", sep = ""), "r") 
+file_name <- paste(base_wd, "en_US.news_train.txt", sep = "")
+con <- file(file_name, "r") 
 train_set <- readLines(con)
 close(con)
 news_num_of_lines <- length(train_set)
+news_file_size    <- paste(round(file.info(file_name)$size / 1024^2, 2), "MB")
 rm(train_set)
 
 basic_stat <- data.frame(source = c('Blogs', 'Twitter', 'News'))
+basic_stat$`File Size` <- c(blogs_file_size, twitter_file_size, news_file_size)
 basic_stat$Paragraphs <- c(blogs_num_of_lines, twitter_num_of_lines, news_num_of_lines)
 basic_stat$Sentences <- c(
   sum(blogs_unigrams_df$cnt[blogs_unigrams_df$Token != 'e1']),
@@ -330,8 +337,8 @@ basic_stat$Tokens <- c(
   sum(twitter_unigrams_df$cnt[twitter_unigrams_df$Token != 's1' & twitter_unigrams_df$Token != 'e1']),
   sum(news_unigrams_df$cnt[news_unigrams_df$Token != 's1' & news_unigrams_df$Token != 'e1']))
 
-basic_stat$`Sentence per Paragraphs` <-  round(basic_stat$Sentence/basic_stat$Paragraphs, 2)
-basic_stat$`Tokens per Sentence`     <-  round(basic_stat$Tokens/basic_stat$Sentences, 2)
+basic_stat$`Sentence/Paragraphs` <-  round(basic_stat$Sentence/basic_stat$Paragraphs, 2)
+basic_stat$`Tokens/Sentence`     <-  round(basic_stat$Tokens/basic_stat$Sentences, 2)
 basic_stat$`Stop Words` <- c(
   sum(blogs_unigrams_df$cnt[blogs_unigrams_df$Stop_Word]),
   sum(twitter_unigrams_df$cnt[twitter_unigrams_df$Stop_Word]),
@@ -356,11 +363,11 @@ kable(basic_stat, format.args = list(big.mark = ','))
 
 
 
-source     Paragraphs    Sentences       Tokens   Sentence per Paragraphs   Tokens per Sentence   Stop Words   English Words   English Words %
---------  -----------  -----------  -----------  ------------------------  --------------------  -----------  --------------  ----------------
-Blogs         890,295   39,677,177   37,198,663                     44.57                  0.94   17,738,257      18,689,916              0.96
-Twitter     2,336,547   33,490,386   29,451,195                     14.33                  0.88   12,493,199      15,604,909              0.92
-News        1,000,141   35,987,329   33,751,240                     35.98                  0.94   14,010,117      18,601,683              0.94
+source    File Size    Paragraphs    Sentences       Tokens   Sentence/Paragraphs   Tokens/Sentence   Stop Words   English Words   English Words %
+--------  ----------  -----------  -----------  -----------  --------------------  ----------------  -----------  --------------  ----------------
+Blogs     197.15 MB       890,295   39,677,177   37,198,663                 44.57              0.94   17,738,257      18,689,916              0.96
+Twitter   158.33 MB     2,336,547   33,490,386   29,451,195                 14.33              0.88   12,493,199      15,604,909              0.92
+News      193.98 MB     1,000,141   35,987,329   33,751,240                 35.98              0.94   14,010,117      18,601,683              0.94
 
 We have a very nice result that after subtracting stop words, our English words % (over all tokens) are as high as 92% - 96%. __Blogs__ and __news__ as expected have a higher sentences per paragraphs (measured by lines or technically escape character"\\n").  Tokens per sentence is about the same except twitter has a little bit shorter sentence (0.94 vs. 0.88).
 
